@@ -95,7 +95,7 @@ def main():
     # ตรวจธุรกรรม ERC20
     if ETHERSCAN_API_KEY:
         transfers = fetch_erc20_transfers(TARGET_WALLET, ETHERSCAN_API_KEY, limit=20)
-        alerts = detect_large_transers(transfers)
+        alerts = detect_large_transfers(transfers)
         for msg in alerts:
             send_line_message(msg)
 

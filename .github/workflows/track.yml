@@ -2,13 +2,15 @@ name: Whale Tracker (LINE Bot)
 
 on:
   schedule:
-    - cron: "*/5 * * * *"   # รันทุก 5 นาที (UTC)
-  workflow_dispatch: {}      # ให้กดรันเองได้จากแท็บ Actions
+    - cron: "*/5 * * * *"      # ทุก 5 นาที
+  workflow_dispatch: {}
+
+permissions:
+  contents: write              # ให้สิทธิ์ commit state.json
 
 jobs:
   track:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +23,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: Run tracker
+      - name: Run Hyperliquid tracker
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_TARGET_ID: ${{ secrets.LINE_TARGET_ID }}
+          WALLET: ${{ secrets.WALLET }}
+          SIZE_CHANGE_PCT: "20"
+          PNL_ALERT_PCT: "20"
+        run: python hyperliquid_tracker.py
+
+      - name: Run on-chain (stable transfers)
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_TARGET_ID: ${{ secrets.LINE_TARGET_ID }}
@@ -29,3 +40,15 @@ jobs:
           ETHERSCAN_API_KEY: ${{ secrets.ETHERSCAN_API_KEY }}
           THRESHOLD_USD: "100000"
         run: python track_whale.py
+
+      - name: Commit state (if changed)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add state.json
+            git commit -m "Update state [skip ci]" || echo "No changes"
+            git push
+          else
+            echo "No state changes"
+          fi
