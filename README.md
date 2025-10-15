@@ -65,9 +65,6 @@ whale-tracker-bot
 
 ## ✅ หมายเหตุ
 - อย่า commit Token ลง GitHub → ใช้ Secrets เท่านั้น!
-- GitHub Actions Free Tier เพียงพอ (5 นาที/ครั้ง ไม่มีปัญหา)
-- LINE Messaging API มี Free Tier → ส่งข้อความฟรีทุกเดือน
-
 ---
 
 ## ✅ ติดต่อ / ช่วยเหลือ
