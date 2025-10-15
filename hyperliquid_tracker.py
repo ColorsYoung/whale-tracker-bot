@@ -5,9 +5,9 @@ LINE_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_TARGET_ID = os.getenv("LINE_TARGET_ID", "")
 WALLET = os.getenv("WALLET", "").strip()
 
-# ปรับแต่งเกณฑ์แจ้งเตือน
-SIZE_CHANGE_PCT = float(os.getenv("SIZE_CHANGE_PCT", "20"))     # เปลี่ยนขนาด >= 20% ให้เตือน
-PNL_ALERT_PCT   = float(os.getenv("PNL_ALERT_PCT", "20"))       # PnL ถึง +/-20% ให้เตือน
+# เกณฑ์แจ้งเตือน (ปรับได้ผ่าน Secrets/Env ใน workflow)
+SIZE_CHANGE_PCT = float(os.getenv("SIZE_CHANGE_PCT", "20"))   # เปลี่ยนขนาด >= 20% ให้เตือน
+PNL_ALERT_PCT   = float(os.getenv("PNL_ALERT_PCT", "20"))     # PnL ถึง +/-20% ให้เตือน
 STATE_FILE = "state.json"
 
 LINE_URL = "https://api.line.me/v2/bot/message/push"
@@ -46,17 +46,11 @@ def now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 def fetch_hyperliquid_positions(address: str):
-    """
-    พยายามดึงตำแหน่ง Perp ของ address จาก Hyperliquid (public API)
-    หมายเหตุ: API ของ HL อาจเปลี่ยนแปลงได้เป็นครั้งคราว โค้ดนี้ทำให้ทนทานด้วยการลองหลายรูปแบบ
-    """
+    """ดึงตำแหน่ง Perp ของ address จาก Hyperliquid (public API)"""
     if not address:
         return []
-
-    # รูปแบบ GET (ถ้า endpoint รองรับ)
     urls = [
         f"https://api.hyperliquid.xyz/info/v2/userPositions?address={address}",
-        # เผื่อ endpoint รุ่นเก่า/อืน ๆ (ถ้าอนาคตเปลี่ยน path จะยังทำงานต่อได้)
         f"https://api.hyperliquid.xyz/info/userPositions?address={address}",
     ]
     for url in urls:
@@ -64,17 +58,14 @@ def fetch_hyperliquid_positions(address: str):
             res = requests.get(url, timeout=12)
             if res.status_code == 200:
                 data = res.json()
-                # ปกติจะได้ list ของ positions
                 if isinstance(data, dict) and "data" in data:
                     data = data["data"]
                 if not data:
                     return []
-                # ทำให้เป็นโครงสร้างมาตรฐาน
                 norm = []
                 for p in data:
-                    # พยายามแมปคีย์ให้ครอบคลุมหลายฟอร์แมต
                     symbol = p.get("symbol") or p.get("asset") or p.get("coin") or "UNKNOWN"
-                    side   = (p.get("side") or p.get("positionSide") or "").upper()  # LONG/SHORT
+                    side   = (p.get("side") or p.get("positionSide") or "").upper()
                     size   = float(p.get("sizeUsd") or p.get("size") or p.get("value") or 0.0)
                     entry  = float(p.get("entryPrice") or p.get("entryPx") or p.get("avgEntry") or 0.0)
                     liq    = float(p.get("liqPrice") or p.get("liquidation") or 0.0)
@@ -96,14 +87,13 @@ def fetch_hyperliquid_positions(address: str):
 
 def compare_and_alert(prev: dict, curr_list: list):
     """
-    prev: state เดิมในรูปแบบ {symbol: {...position...}}
+    prev: state เดิมรูปแบบ {symbol: {...}}
     curr_list: รายการ position ปัจจุบัน (list)
     """
     curr = {p["symbol"]: p for p in curr_list}
     alerts = []
 
     # A) เปิดใหม่ / B) เพิ่ม-ลดขนาด / C) กลับฝั่ง / D) ปิดโพสิชัน / E) PnL ถึงเกณฑ์
-    # ตรวจรายการปัจจุบัน
     for sym, p in curr.items():
         side = p["side"] or "-"
         size = float(p.get("sizeUsd") or 0.0)
@@ -144,7 +134,7 @@ def compare_and_alert(prev: dict, curr_list: list):
                             f"Entry: {entry:.2f}  Liq: {liq:.2f}\n"
                             f"Time: {now_iso()}"
                         )
-            # E) PnL ถึงเกณฑ์ (แสดงเป็น % ของขนาดโดยประเมินหยาบ ๆ)
+            # E) PnL ถึงเกณฑ์ (ประเมิน % จาก sizeUsd)
             if size > 0:
                 pnl_pct = (pnl / size) * 100 if size else 0.0
                 if abs(pnl_pct) >= PNL_ALERT_PCT:
@@ -156,7 +146,7 @@ def compare_and_alert(prev: dict, curr_list: list):
                         f"Time: {now_iso()}"
                     )
 
-    # D) ปิดโพสิชัน (ของเดิมมี แต่ตอนนี้ไม่มี)
+    # D) ปิดโพสิชัน
     for sym, prev_p in prev.items():
         if sym not in curr or float(curr.get(sym, {}).get("sizeUsd") or 0.0) <= 0:
             if float(prev_p.get("sizeUsd") or 0.0) > 0:
@@ -172,11 +162,11 @@ def main():
         print("❌ WALLET env not set")
         return
 
-    # แจ้งเริ่มต้น (ครั้งแรกเท่านั้น)
+    # ส่งครั้งแรกเท่านั้น (บันทึกใน state.json)
     state = load_state()
-    if not state.get("_boot_sent"):
-        send_line(f"🚀 Hyperliquid Tracker started\nWallet: {WALLET}\nTime: {now_iso()}")
-        state["_boot_sent"] = True
+    if not state.get("_boot_sent_hl"):
+        send_line(f"🚀 Hyperliquid tracker started\nWallet: {WALLET}\nTime: {now_iso()}")
+        state["_boot_sent_hl"] = True
         save_state(state)
 
     pos = fetch_hyperliquid_positions(WALLET)
