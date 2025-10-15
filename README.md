@@ -67,7 +67,3 @@ whale-tracker-bot
 - อย่า commit Token ลง GitHub → ใช้ Secrets เท่านั้น!
 ---
 
-## ✅ ติดต่อ / ช่วยเหลือ
-หากต้องการให้ปรับโค้ดเพิ่ม / ดึงโพสิชัน Hyperliquid / ทำ Dashboard  
-สามารถถามฉัน (ChatGPT) ได้ตลอด 😊
-
