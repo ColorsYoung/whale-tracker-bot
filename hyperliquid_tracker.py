@@ -3,12 +3,29 @@ from datetime import datetime, timezone
 
 LINE_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 LINE_TARGET_ID = os.getenv("LINE_TARGET_ID", "")
-WALLET = os.getenv("WALLET", "").strip()
 
-# เกณฑ์แจ้งเตือน (ปรับได้ผ่าน Secrets/Env ใน workflow)
+# เกณฑ์แจ้งเตือน (ปรับได้ผ่าน Secrets/Env)
 SIZE_CHANGE_PCT = float(os.getenv("SIZE_CHANGE_PCT", "20"))   # เปลี่ยนขนาด >= 20% ให้เตือน
 PNL_ALERT_PCT   = float(os.getenv("PNL_ALERT_PCT", "20"))     # PnL ถึง +/-20% ให้เตือน
 STATE_FILE = "state.json"
+
+# ---- รายชื่อวาฬ (ค่าเริ่มต้น 2 คน) ----
+DEFAULT_WALLETS = [
+    {"name": "Whale A", "address": "0xb317d2bc2d3d2df5fa441b5bae0ab9d8b07283ae"},
+    {"name": "Whale B", "address": "0xf429b2c3f2b7f195367ab6a9b9af279b9d494de5"},
+]
+# หากต้องการ override ผ่าน ENV ให้ตั้ง WALLETS_JSON เป็น JSON array ของ {name, address}
+ENV_WALLETS = os.getenv("WALLETS_JSON", "").strip()
+if ENV_WALLETS:
+    try:
+        DEFAULT_WALLETS = json.loads(ENV_WALLETS)
+    except Exception:
+        pass
+
+# รองรับ fallback: ถ้ามี WALLET เดี่ยวใน ENV และยังไม่อยู่ในลิสต์ จะเพิ่มเป็น "Primary"
+SINGLE_WALLET = os.getenv("WALLET", "").strip()
+if SINGLE_WALLET and all(w["address"].lower() != SINGLE_WALLET.lower() for w in DEFAULT_WALLETS):
+    DEFAULT_WALLETS = [{"name": "Primary", "address": SINGLE_WALLET}] + DEFAULT_WALLETS
 
 LINE_URL = "https://api.line.me/v2/bot/message/push"
 LINE_HEADERS = {"Authorization": f"Bearer {LINE_TOKEN}", "Content-Type": "application/json"}
@@ -44,6 +61,10 @@ def fmt_usd(x: float) -> str:
 
 def now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+def short_addr(addr: str) -> str:
+    a = addr.lower()
+    return a[:6] + "..." + a[-4:] if len(a) > 10 else a
 
 def fetch_hyperliquid_positions(address: str):
     """ดึงตำแหน่ง Perp ของ address จาก Hyperliquid (public API)"""
@@ -85,10 +106,10 @@ def fetch_hyperliquid_positions(address: str):
             print("Fetch HL error:", e)
     return []
 
-def compare_and_alert(prev: dict, curr_list: list):
+def compare_and_alert(whale_name: str, prev: dict, curr_list: list):
     """
-    prev: state เดิมรูปแบบ {symbol: {...}}
-    curr_list: รายการ position ปัจจุบัน (list)
+    prev: state เดิมของวาฬนี้ {symbol: {...}}
+    curr_list: positions ปัจจุบัน (list)
     """
     curr = {p["symbol"]: p for p in curr_list}
     alerts = []
@@ -106,7 +127,8 @@ def compare_and_alert(prev: dict, curr_list: list):
         if prev_p is None or float(prev_p.get("sizeUsd") or 0.0) <= 0:
             # A) เปิดใหม่
             alerts.append(
-                f"🐋 Open {side} {sym}\n"
+                f"🐋 {whale_name}\n"
+                f"OPEN {side} {sym}\n"
                 f"Size: {fmt_usd(size)}  Lev: x{lev:.1f}\n"
                 f"Entry: {entry:.2f}  Liq: {liq:.2f}\n"
                 f"Time: {now_iso()}"
@@ -117,8 +139,8 @@ def compare_and_alert(prev: dict, curr_list: list):
             # C) กลับฝั่ง
             if prev_side != side and size > 0:
                 alerts.append(
-                    f"⚠️ Flip {sym}\n"
-                    f"{prev_side} → {side}\n"
+                    f"⚠️ {whale_name}\n"
+                    f"FLIP {sym}: {prev_side} → {side}\n"
                     f"New size: {fmt_usd(size)}  Entry: {entry:.2f}\n"
                     f"Time: {now_iso()}"
                 )
@@ -129,58 +151,69 @@ def compare_and_alert(prev: dict, curr_list: list):
                     if change_pct >= SIZE_CHANGE_PCT:
                         direction = "Increase" if size > prev_size else "Reduce"
                         alerts.append(
-                            f"🔄 {direction} {sym} {side}\n"
+                            f"🔄 {whale_name}\n"
+                            f"{direction} {sym} {side}\n"
                             f"{fmt_usd(prev_size)} → {fmt_usd(size)}  ({change_pct:.1f}%)\n"
                             f"Entry: {entry:.2f}  Liq: {liq:.2f}\n"
                             f"Time: {now_iso()}"
                         )
-            # E) PnL ถึงเกณฑ์ (ประเมิน % จาก sizeUsd)
+            # E) PnL ถึงเกณฑ์
             if size > 0:
                 pnl_pct = (pnl / size) * 100 if size else 0.0
                 if abs(pnl_pct) >= PNL_ALERT_PCT:
                     sign = "✅ Profit" if pnl_pct > 0 else "❌ Loss"
                     alerts.append(
-                        f"{sign} on {sym} {side}\n"
-                        f"PNL: {fmt_usd(pnl)}  ({pnl_pct:.1f}%)\n"
+                        f"{sign} • {whale_name}\n"
+                        f"{sym} {side} | PNL: {fmt_usd(pnl)} ({pnl_pct:.1f}%)\n"
                         f"Size: {fmt_usd(size)}  Entry: {entry:.2f}\n"
                         f"Time: {now_iso()}"
                     )
 
-    # D) ปิดโพสิชัน
+    # D) ปิดโพสิชัน (เดิมมี ตอนนี้ไม่มี)
     for sym, prev_p in prev.items():
         if sym not in curr or float(curr.get(sym, {}).get("sizeUsd") or 0.0) <= 0:
             if float(prev_p.get("sizeUsd") or 0.0) > 0:
                 alerts.append(
-                    f"✅ Close {prev_p.get('side')} {sym}\n"
+                    f"✅ {whale_name}\n"
+                    f"CLOSE {prev_p.get('side')} {sym}\n"
                     f"Prev size: {fmt_usd(float(prev_p.get('sizeUsd') or 0.0))}\n"
                     f"Time: {now_iso()}"
                 )
     return alerts, curr
 
 def main():
-    if not WALLET:
-        print("❌ WALLET env not set")
+    wallets = DEFAULT_WALLETS[:]
+    if not wallets:
+        print("❌ No wallets configured")
         return
 
-    # ส่งครั้งแรกเท่านั้น (บันทึกใน state.json)
     state = load_state()
-    if not state.get("_boot_sent_hl"):
-        send_line(f"🚀 Hyperliquid tracker started\nWallet: {WALLET}\nTime: {now_iso()}")
-        state["_boot_sent_hl"] = True
+    # เตรียมช่องเก็บสถานะตามวาฬ
+    if "positions" not in state or not isinstance(state["positions"], dict):
+        state["positions"] = {}
+
+    for w in wallets:
+        name = w["name"]
+        addr = w["address"].strip()
+        prev = state["positions"].get(name, {})
+
+        # ส่ง “Started” ครั้งแรกต่อวาฬ
+        boot_key = f"_boot_sent_hl::{name}"
+        if not state.get(boot_key):
+            send_line(f"🚀 Hyperliquid tracker started\n{name} • {short_addr(addr)}")
+            state[boot_key] = True
+            save_state(state)
+
+        pos = fetch_hyperliquid_positions(addr)
+        print(f"[{name}] Positions:", pos)
+
+        alerts, new_positions = compare_and_alert(name, prev, pos)
+        for msg in alerts:
+            send_line(msg)
+            time.sleep(0.3)
+
+        state["positions"][name] = new_positions
         save_state(state)
-
-    pos = fetch_hyperliquid_positions(WALLET)
-    print("Positions:", pos)
-
-    prev_positions = state.get("positions", {})
-    alerts, new_positions = compare_and_alert(prev_positions, pos)
-
-    for msg in alerts:
-        send_line(msg)
-        time.sleep(0.3)
-
-    state["positions"] = new_positions
-    save_state(state)
 
 if __name__ == "__main__":
     main()
