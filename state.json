@@ -1,6 +1,11 @@
 {
   "_boot_sent": true,
-  "positions": {},
+  "positions": {
+    "Whale A": {},
+    "Whale B": {}
+  },
   "_boot_sent_hl": true,
-  "_boot_sent_onchain": true
+  "_boot_sent_onchain": true,
+  "_boot_sent_hl::Whale A": true,
+  "_boot_sent_hl::Whale B": true
 }
