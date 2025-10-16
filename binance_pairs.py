@@ -94,7 +94,10 @@ def check_binance_pairs():
     seen_margin = set(state["binance_pairs_margin"])
     seen_future = set(state["binance_pairs_futures"])
 
-    articles = _fetch_articles()
+    # articles = _fetch_articles()
+    articles = [
+    {"id": "test1", "title": "Binance Will List TEST (TEST/USDT)", "releaseDate": 1730000000000},
+]
     if not articles:
         return
 
