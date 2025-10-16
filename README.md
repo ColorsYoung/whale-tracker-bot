@@ -87,29 +87,4 @@ Send instant alerts via LINE whenever high-impact events occur.
 โปรเจกต์นี้ออกแบบแบบ **Modular / Clean / Scalable**  
 เพื่อให้สามารถขยาย, ดูแล, แก้ไขได้ง่ายในระยะยาว
 
-whale-tracker-bot/
-│
-├── core/ # โมดูลกลาง ใช้ร่วมกันทุก tracker
-│ ├── config.py # อ่าน environment variables, ตัวแปรสำคัญ
-│ ├── state_manager.py # load_state() / save_state() → อ่าน/เขียน state.json
-│ └── line_notifier.py # send_line_message() → ส่ง LINE แจ้งเตือน
-│
-├── trackers/ # ติดตามเหตุการณ์จากหลายแหล่ง (modular)
-│ ├── hyperliquid_tracker.py # ติดตามโพสิชันวาฬบน Hyperliquid
-│ ├── onchain_tracker.py # ตรวจจับธุรกรรม stablecoin ก้อนใหญ่จาก Etherscan
-│ │
-│ └── binance/ # แยก Binance ออกเป็น 4 โมดูลชัดเจน
-│ ├── init.py
-│ ├── listing.py # เหรียญใหม่จะลิสต์ (Will List)
-│ ├── spot_pairs.py # เพิ่ม Spot trading pairs
-│ ├── margin_pairs.py # เพิ่ม Margin / Isolated / Cross
-│ └── futures_pairs.py # เพิ่ม Futures / Perpetual contracts
-│
-├── main.py # จุดควบคุมหลัก: เรียก tracker ทุกตัว
-│
-├── state.json # เก็บสถานะล่าสุดเพื่อกันแจ้งซ้ำ (auto create)
-├── requirements.txt # Python dependencies
-└── README.md # (ไฟล์นี้)
-
-
 
