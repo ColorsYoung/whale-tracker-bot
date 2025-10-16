@@ -1,19 +1,42 @@
-from trackers.binance.listing import check_binance_listing
-from trackers.binance.spot_pairs import check_binance_spot_pairs
-from trackers.binance.margin_pairs import check_binance_margin_pairs
-from trackers.binance.futures_pairs import check_binance_futures_pairs
+# main.py
+from trackers.market.top_gainers import check_top_gainers
+from trackers.market.trending_coins import check_trending_coins
+from trackers.market.recently_added import check_recently_added
+from trackers.dex.new_pairs import check_new_dex_pairs
+from trackers.news.crypto_news import check_crypto_news
+
 from trackers.hyperliquid_tracker import run_hyperliquid_tracker
 from trackers.onchain_tracker import run_onchain_tracker
 
-def main():
-    try:
-        check_binance_listing()
-        check_binance_spot_pairs()
-        check_binance_margin_pairs()
-        check_binance_futures_pairs()
-    except Exception as e:
-        print("Binance checks error:", e)
 
+def main():
+    # =============== MARKET / SOCIAL SENTIMENT ===============
+    try:
+        check_top_gainers(threshold_pct=20)
+    except Exception as e:
+        print("Top Gainers error:", e)
+
+    try:
+        check_trending_coins(limit=5)
+    except Exception as e:
+        print("Trending Coins error:", e)
+
+    try:
+        check_recently_added(limit=5)
+    except Exception as e:
+        print("Recently Added error:", e)
+
+    try:
+        check_new_dex_pairs(liq_threshold=50000, limit=5)
+    except Exception as e:
+        print("New DEX Pairs error:", e)
+
+    try:
+        check_crypto_news(filter_type="important", limit=5)
+    except Exception as e:
+        print("Crypto News error:", e)
+
+    # =============== WHALE / DERIVATIVES ===============
     try:
         run_hyperliquid_tracker()
     except Exception as e:
@@ -23,6 +46,7 @@ def main():
         run_onchain_tracker()
     except Exception as e:
         print("On-chain tracker error:", e)
+
 
 if __name__ == "__main__":
     main()
