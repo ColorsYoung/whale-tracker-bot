@@ -38,7 +38,6 @@ def check_binance_margin_pairs():
 
         when = _fmt_dt(a.get("releaseDate", 0))
         link = f"https://www.binance.com/en/support/announcement/{aid}"
-
         msg = f"[Binance Margin]\n{title}\nTime: {when}\n{link}"
         print(msg)
         send_line_message(msg)

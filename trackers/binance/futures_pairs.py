@@ -37,7 +37,6 @@ def check_binance_futures_pairs():
 
         when = _fmt_dt(a.get("releaseDate", 0))
         link = f"https://www.binance.com/en/support/announcement/{aid}"
-
         msg = f"[Binance Futures]\n{title}\nTime: {when}\n{link}"
         print(msg)
         send_line_message(msg)
