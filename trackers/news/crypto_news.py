@@ -8,10 +8,24 @@ API_KEY = os.getenv("CRYPTOPANIC_API_KEY", "")
 BASE_URL = "https://cryptopanic.com/api/developer/v2/posts/"
 
 
-def fetch_news(filter_type="important", limit=20):
-    if not API_KEY:
-        return []
+def safe_request(params, retries=3, delay=2):
+    for _ in range(retries):
+        try:
+            resp = requests.get(BASE_URL, params=params, timeout=10)
+            if resp.status_code == 200:
+                return resp.json().get("results", [])
+            else:
+                print(f"CryptoPanic status {resp.status_code}")
+        except Exception as e:
+            print("CryptoPanic request error:", e)
+        time.sleep(delay)
+    return []
 
+
+def fetch_news(filter_type="important", limit=10):
+    if not API_KEY:
+        print("❌ Missing CRYPTOPANIC_API_KEY")
+        return []
     params = {
         "auth_token": API_KEY,
         "public": "true",
@@ -19,26 +33,23 @@ def fetch_news(filter_type="important", limit=20):
         "filter": filter_type,
         "size": limit
     }
-
-    try:
-        resp = requests.get(BASE_URL, params=params, timeout=10)
-        resp.raise_for_status()
-        return resp.json().get("results", [])
-    except Exception as e:
-        print(f"CryptoPanic fetch error ({filter_type}):", e)
-        return []
+    return safe_request(params)
 
 
 def check_crypto_news_all(limit_each=3):
-    categories = ["important", "bullish"]  # ลดเหลือ 2 หมวดก่อน (ปลอดภัย)
+    filters = ["important", "bullish"]
     state = load_state()
 
-    for cat in categories:
-        key = f"news_{cat}"
-        seen = set(state.get(key, []))
+    for f in filters:
+        seen_key = f"cryptopanic_seen_{f}"
+        seen = set(state.get(seen_key, []))
+        news = fetch_news(f, limit_each)
 
-        items = fetch_news(cat, limit_each)
-        for item in items:
+        if not news:
+            print(f"⚠️ No data for {f}")
+            continue
+
+        for item in news:
             nid = str(item.get("id"))
             if nid in seen:
                 continue
@@ -51,16 +62,16 @@ def check_crypto_news_all(limit_each=3):
             imp = votes.get("important", 0)
 
             msg = (
-                f"[NEWS {cat.upper()}]\n"
+                f"[CryptoPanic • {f.upper()}]\n"
                 f"{title}\n"
-                f"👍{pos} 👎{neg} ⭐{imp}\n"
+                f"👍 {pos}  👎 {neg}  ⭐ {imp}\n"
                 f"{url}"
             )
             print(msg)
             send_line_message(msg)
             seen.add(nid)
+            time.sleep(0.8)
 
-        state[key] = list(seen)
+        state[seen_key] = list(seen)
         save_state(state)
-
-        time.sleep(1.2)  # ป้องกัน rate limit
+        time.sleep(2)
