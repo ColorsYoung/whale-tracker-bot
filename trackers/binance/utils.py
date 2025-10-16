@@ -4,7 +4,18 @@ BINANCE_API = "https://www.binance.com/bapi/composite/v1/public/cms/article/list
 
 HEADERS = {
     "Content-Type": "application/json",
-    "User-Agent": "Mozilla/5.0"
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+    "Origin": "https://www.binance.com",
+    "Referer": "https://www.binance.com/",
+    "X-UI-REQUEST-TRACE": "true"
 }
 
 def fetch_binance_articles(catalog_id=48, page=1, page_size=20):
