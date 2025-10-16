@@ -1,54 +1,69 @@
-# main.py
-from trackers.market.top_gainers import check_top_gainers
-from trackers.market.trending_coins import check_trending_coins
-from trackers.market.recently_added import check_recently_added
+# trackers/news/crypto_news.py
 
-from trackers.dex.new_pairs import check_new_dex_pairs
-from trackers.news.crypto_news import check_crypto_news  # ✅ ใช้ฟังก์ชันใหม่
+import os
+import requests
+from core.state_manager import load_state, save_state
+from core.line_notifier import send_line_message
 
-from trackers.hyperliquid_tracker import run_hyperliquid_tracker
-from trackers.onchain_tracker import run_onchain_tracker
+API_KEY = os.getenv("CRYPTOPANIC_API_KEY", "")
+BASE_URL = "https://cryptopanic.com/api/developer/v2/posts/"
 
+# ใช้เฉพาะ filter ที่ Developer Plan รองรับ
+FILTERS = ["important", "bullish", "bearish"]
 
-def main():
-    # =============== MARKET / SOCIAL SENTIMENT ===============
-    try:
-        check_top_gainers(threshold_pct=20)
-    except Exception as e:
-        print("Top Gainers error:", e)
+def fetch_news(filter_type: str, size: int = 20):
+    if not API_KEY:
+        return []
 
-    try:
-        check_trending_coins(limit=5)
-    except Exception as e:
-        print("Trending Coins error:", e)
-
-    try:
-        check_recently_added(limit=5)
-    except Exception as e:
-        print("Recently Added error:", e)
+    params = {
+        "auth_token": API_KEY,
+        "public": "true",
+        "kind": "news",
+        "filter": filter_type,
+        "size": size
+    }
 
     try:
-        check_new_dex_pairs(liq_threshold=50000, limit=5)
+        r = requests.get(BASE_URL, params=params, timeout=10)
+        if r.status_code != 200:
+            print(f"CryptoPanic {filter_type} status {r.status_code}")
+            return []
+        data = r.json()
+        return data.get("results", [])
     except Exception as e:
-        print("DEX error:", e)
+        print(f"CryptoPanic exception ({filter_type}):", e)
+        return []
 
-    try:
-        # ✅ ใช้ฟังก์ชันใหม่ check_crypto_news
-        check_crypto_news(limit=5)
-    except Exception as e:
-        print("CryptoPanic error:", e)
+def check_crypto_news_all(limit_each=3):
+    state = load_state()
+    if "seen_crypto_news" not in state:
+        state["seen_crypto_news"] = []
+    seen = set(state["seen_crypto_news"])
 
-    # =============== WHALE / DERIVATIVES ===============
-    try:
-        run_hyperliquid_tracker()
-    except Exception as e:
-        print("Hyperliquid tracker error:", e)
+    for ft in FILTERS:
+        news_list = fetch_news(ft, size=20)
+        if not news_list:
+            print(f"⚠️ No data for {ft}")
+            continue
 
-    try:
-        run_onchain_tracker()
-    except Exception as e:
-        print("On-chain tracker error:", e)
+        count = 0
+        for item in news_list:
+            nid = item.get("id")
+            if not nid or nid in seen:
+                continue
 
+            title = item.get("title", "")
+            url = item.get("url") or item.get("original_url") or ""
+            when = item.get("published_at", "")
 
-if __name__ == "__main__":
-    main()
+            msg = f"[CryptoPanic {ft.upper()}]\n{title}\nTime: {when}\n{url}"
+            print(msg)
+            send_line_message(msg)
+
+            seen.add(nid)
+            count += 1
+            if count >= limit_each:
+                break
+
+    state["seen_crypto_news"] = list(seen)
+    save_state(state)
