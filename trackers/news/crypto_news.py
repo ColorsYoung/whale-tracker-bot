@@ -1,90 +1,90 @@
 # trackers/news/crypto_news.py
 import os
-import time
 import requests
-from core.state_manager import load_state, save_state
+from datetime import datetime
 from core.line_notifier import send_line_message
+from core.state_manager import load_state, save_state
 
 API_KEY = os.getenv("CRYPTOPANIC_API_KEY", "")
-BASE_URL = "https://cryptopanic.com/api/developer/v2/posts/"
+API_URL = "https://cryptopanic.com/api/developer/v2/posts/"
 
-# คีย์เวิร์ดที่เราสนใจ
-KEYWORDS = [
-    "binance", "list", "listing", "launch", "launchpad", "launchpool",
-    "hack", "exploit", "etf", "sec", "approval", "pump", "moon",
-    "bullish", "bearish"
+# ✅ คีย์เวิร์ดที่สื่อถึง “ข่าวมีผลต่อราคา”
+IMPACT_KEYWORDS = [
+    "binance", "listing", "hack", "partnership", "launch",
+    "upgrade", "airdrop", "invest", "regulation", "lawsuit",
+    "exploit", "adoption", "sec", "etf", "delist",
 ]
 
+def _contains_impact(text: str) -> bool:
+    text = text.lower()
+    return any(k in text for k in IMPACT_KEYWORDS)
 
-def safe_request(params, retries=3, delay=2):
-    for _ in range(retries):
-        try:
-            resp = requests.get(BASE_URL, params=params, timeout=10)
-            if resp.status_code == 200:
-                return resp.json().get("results", [])
-            else:
-                print(f"CryptoPanic status {resp.status_code}")
-        except Exception as e:
-            print("CryptoPanic request error:", e)
-        time.sleep(delay)
-    return []
+def _fmt_time(iso: str) -> str:
+    try:
+        dt = datetime.fromisoformat(iso.replace('Z', '+00:00'))
+        return dt.strftime("%Y-%m-%d %H:%M")
+    except:
+        return iso
 
-
-def fetch_news(limit=20):
+def fetch_news(size=20):
     if not API_KEY:
-        print("❌ Missing CRYPTOPANIC_API_KEY")
+        print("❌ No CRYPTOPANIC_API_KEY")
         return []
+
     params = {
         "auth_token": API_KEY,
-        "public": "true",
+        "public": "true",    # ✅ ใช้ public mode
         "kind": "news",
-        "size": limit
+        "size": size         # ✅ Developer plan max 20
     }
-    return safe_request(params)
 
+    try:
+        r = requests.get(API_URL, params=params, timeout=15)
+        if r.status_code == 500:
+            print("CryptoPanic 500 error")
+            return []
+        r.raise_for_status()
+        data = r.json()
+        return data.get("results", [])
+    except Exception as e:
+        print("CryptoPanic fetch error:", e)
+        return []
 
-def is_relevant_news(title: str, desc: str):
-    text = (title or "" + " " + desc or "").lower()
-    return any(kw in text for kw in KEYWORDS)
-
-
-def check_crypto_news(limit=20):
+def check_crypto_news(limit=5):
     state = load_state()
-    seen = set(state.get("cryptopanic_seen", []))
+    seen_ids = set(state.get("crypto_news_ids", []))
 
-    news_list = fetch_news(limit)
+    news_list = fetch_news(size=20)
     if not news_list:
-        print("⚠️ No news data")
         return
 
+    count = 0
     for item in news_list:
-        nid = str(item.get("id"))
-        if nid in seen:
+        nid = item.get("id")
+        if nid in seen_ids:
             continue
 
         title = item.get("title", "")
-        desc = item.get("description", "")
-        url = item.get("url", "")
+        desc = item.get("description", "") or ""
+        if not _contains_impact(title + " " + desc):
+            continue  # ✅ กรองเฉพาะข่าวสำคัญ
 
-        if not is_relevant_news(title, desc):
-            continue
-
-        votes = item.get("votes", {})
-        pos = votes.get("positive", 0)
-        neg = votes.get("negative", 0)
-        imp = votes.get("important", 0)
+        pub_time = _fmt_time(item.get("published_at", ""))
+        link = item.get("url") or item.get("original_url") or ""
 
         msg = (
             f"[Crypto News]\n"
             f"{title}\n"
-            f"👍 {pos}  👎 {neg}  ⭐ {imp}\n"
-            f"{url}"
+            f"Time: {pub_time}\n"
+            f"{link}"
         )
         print(msg)
         send_line_message(msg)
 
-        seen.add(nid)
-        time.sleep(0.8)
+        seen_ids.add(nid)
+        count += 1
+        if count >= limit:
+            break
 
-    state["cryptopanic_seen"] = list(seen)
+    state["crypto_news_ids"] = list(seen_ids)
     save_state(state)
