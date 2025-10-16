@@ -14,17 +14,27 @@
     "chainopera-ai"
   ],
   "market_trending": [
-    "yield-basis",
+    "chainopera-ai",
     "aster-2",
     "bless-2",
+    "hyperliquid",
+    "plasma",
+    "bitcoin",
     "edu-coin",
-    "chainopera-ai"
+    "bittensor",
+    "pudgy-penguins",
+    "yield-basis"
   ],
   "market_recently_added": [
-    "z-z-z-z-z-fehu-z-z-z-z-z",
     "zyncoin-2",
     "zygo-the-frog",
+    "zuzalu",
+    "zyberswap",
+    "zuzalu-inu",
+    "z-z-z-z-z-fehu-z-z-z-z-z",
+    "zum-token",
     "zyro-2",
+    "zyfi",
     "zynecoin"
   ],
   "dex_new_pairs": [],
