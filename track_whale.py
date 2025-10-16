@@ -2,8 +2,11 @@ import os
 import requests
 import json
 
+from binance_listing import check_binance_listing
+from binance_pairs import check_binance_pairs
+
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
-LINE_TARGET_ID = os.getenv("LINE_TARGET_ID", "")  # userId (U...) หรือ groupId (C...)
+LINE_TARGET_ID = os.getenv("LINE_TARGET_ID", "")
 TARGET_WALLET = os.getenv("WALLET", "").strip()
 ETHERSCAN_API_KEY = os.getenv("ETHERSCAN_API_KEY", "")
 THRESHOLD_USD = float(os.getenv("THRESHOLD_USD", "100000"))
@@ -17,14 +20,14 @@ LINE_HEADERS = {
 
 def send_line_message(text: str):
     if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_TARGET_ID:
-        print("❌ LINE config is missing")
+        print("LINE config is missing")
         return
     payload = {"to": LINE_TARGET_ID, "messages": [{"type": "text", "text": text[:4900]}]}
     try:
         res = requests.post(LINE_PUSH_URL, headers=LINE_HEADERS, json=payload, timeout=10)
         print("LINE:", res.status_code, res.text[:200])
     except Exception as e:
-        print("❌ LINE send error:", e)
+        print("LINE send error:", e)
 
 def load_state():
     if os.path.exists(STATE_FILE):
@@ -53,7 +56,7 @@ def fetch_erc20_transfers(addr: str, apikey: str, limit=20):
             return []
         return data.get("result", [])
     except Exception as e:
-        print("❌ Etherscan error:", e)
+        print("Etherscan error:", e)
         return []
 
 def detect_large_transfers(transfers):
@@ -76,12 +79,25 @@ def detect_large_transfers(transfers):
             )
     return alerts
 
+
 def main():
+    #1) เช็คเหรียญจะลิสต์ใหม่ (Binance Listing)
+    try:
+        check_binance_listing()
+    except Exception as e:
+        print("Error in check_binance_listing():", e)
+
+    #2) เช็คคู่เทรด / Margin / Futures (Binance Pairs)
+    try:
+        check_binance_pairs()
+    except Exception as e:
+        print("Error in check_binance_pairs():", e)
+
+    #3) เช็คธุรกรรมวาฬแบบเดิม (On-chain Tracker)
     if not TARGET_WALLET:
-        print("❌ WALLET env not set")
+        print("WALLET env not set")
         return
 
-    # ส่งครั้งแรกเท่านั้น (on-chain)
     state = load_state()
     if not state.get("_boot_sent_onchain"):
         send_line_message(
@@ -95,6 +111,7 @@ def main():
         alerts = detect_large_transfers(transfers)
         for msg in alerts:
             send_line_message(msg)
+
 
 if __name__ == "__main__":
     main()
