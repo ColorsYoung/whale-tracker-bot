@@ -5,5 +5,9 @@
   },
   "_boot_sent_hl::Whale A": true,
   "_boot_sent_hl::Whale B": true,
-  "_boot_sent_onchain": true
+  "_boot_sent_onchain": true,
+  "binance_listing_ids": [],
+  "binance_spot_ids": [],
+  "binance_margin_ids": [],
+  "binance_futures_ids": []
 }
