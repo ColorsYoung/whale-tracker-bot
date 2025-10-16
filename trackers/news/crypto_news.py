@@ -1,3 +1,4 @@
+# trackers/news/crypto_news.py
 import os
 import time
 import requests
@@ -6,6 +7,13 @@ from core.line_notifier import send_line_message
 
 API_KEY = os.getenv("CRYPTOPANIC_API_KEY", "")
 BASE_URL = "https://cryptopanic.com/api/developer/v2/posts/"
+
+# คีย์เวิร์ดที่เราสนใจ
+KEYWORDS = [
+    "binance", "list", "listing", "launch", "launchpad", "launchpool",
+    "hack", "exploit", "etf", "sec", "approval", "pump", "moon",
+    "bullish", "bearish"
+]
 
 
 def safe_request(params, retries=3, delay=2):
@@ -22,7 +30,7 @@ def safe_request(params, retries=3, delay=2):
     return []
 
 
-def fetch_news(filter_type="important", limit=10):
+def fetch_news(limit=20):
     if not API_KEY:
         print("❌ Missing CRYPTOPANIC_API_KEY")
         return []
@@ -30,48 +38,53 @@ def fetch_news(filter_type="important", limit=10):
         "auth_token": API_KEY,
         "public": "true",
         "kind": "news",
-        "filter": filter_type,
         "size": limit
     }
     return safe_request(params)
 
 
-def check_crypto_news_all(limit_each=3):
-    filters = ["important", "bullish"]
+def is_relevant_news(title: str, desc: str):
+    text = (title or "" + " " + desc or "").lower()
+    return any(kw in text for kw in KEYWORDS)
+
+
+def check_crypto_news(limit=20):
     state = load_state()
+    seen = set(state.get("cryptopanic_seen", []))
 
-    for f in filters:
-        seen_key = f"cryptopanic_seen_{f}"
-        seen = set(state.get(seen_key, []))
-        news = fetch_news(f, limit_each)
+    news_list = fetch_news(limit)
+    if not news_list:
+        print("⚠️ No news data")
+        return
 
-        if not news:
-            print(f"⚠️ No data for {f}")
+    for item in news_list:
+        nid = str(item.get("id"))
+        if nid in seen:
             continue
 
-        for item in news:
-            nid = str(item.get("id"))
-            if nid in seen:
-                continue
+        title = item.get("title", "")
+        desc = item.get("description", "")
+        url = item.get("url", "")
 
-            title = item.get("title", "")
-            url = item.get("url", "")
-            votes = item.get("votes", {})
-            pos = votes.get("positive", 0)
-            neg = votes.get("negative", 0)
-            imp = votes.get("important", 0)
+        if not is_relevant_news(title, desc):
+            continue
 
-            msg = (
-                f"[CryptoPanic • {f.upper()}]\n"
-                f"{title}\n"
-                f"👍 {pos}  👎 {neg}  ⭐ {imp}\n"
-                f"{url}"
-            )
-            print(msg)
-            send_line_message(msg)
-            seen.add(nid)
-            time.sleep(0.8)
+        votes = item.get("votes", {})
+        pos = votes.get("positive", 0)
+        neg = votes.get("negative", 0)
+        imp = votes.get("important", 0)
 
-        state[seen_key] = list(seen)
-        save_state(state)
-        time.sleep(2)
+        msg = (
+            f"[Crypto News]\n"
+            f"{title}\n"
+            f"👍 {pos}  👎 {neg}  ⭐ {imp}\n"
+            f"{url}"
+        )
+        print(msg)
+        send_line_message(msg)
+
+        seen.add(nid)
+        time.sleep(0.8)
+
+    state["cryptopanic_seen"] = list(seen)
+    save_state(state)
